@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Tracking Link</title>
+  <style>
+    :root{--bg:#0b1220;--card:#111a2c;--text:#e7eefc;--muted:#9db0d0;--accent:#4ea4ff;--ok:#34d399;--warn:#f59e0b}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(160deg,var(--bg),#0a1020 60%);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,'Helvetica Neue',Noto Sans,'Apple Color Emoji','Segoe UI Emoji'}
+    .wrap{min-height:100%;display:grid;place-items:center;padding:24px}
+    .card{width:min(680px,92vw);background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:22px 22px 18px}
+    h1{font-size:1.25rem;margin:0 0 12px;letter-spacing:.3px}
+    .num{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#0a1324;border:1px dashed rgba(255,255,255,.18);border-radius:12px;padding:12px 14px;word-break:break-all}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+    button{appearance:none;border:0;border-radius:12px;padding:11px 14px;background:#1a2744;color:var(--text);cursor:pointer}
+    button:hover{background:#1e2d52}
+    .primary{background:var(--accent);color:#00122a;font-weight:600}
+    .primary:hover{filter:brightness(1.05)}
+    .hint{color:var(--muted);font-size:.9rem;margin-top:10px}
+    .ok{color:var(--ok)}
+    .warn{color:var(--warn)}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Tracking Link Helper</h1>
+      <div id="status" class="hint">Reading tracking number from URL…</div>
+      <div id="number" class="num" aria-live="polite">(no number yet)</div>
+      <div class="row">
+        <button id="copyBtn" title="Copy number to clipboard">Copy Number</button>
+        <button id="openBtn" class="primary" title="Open Tracxlogis tracking page">Open Tracking Page</button>
+      </div>
+      <div class="hint">How to use: send a link like <code>https://YOURUSERNAME.github.io/tracking-links/?n=QSP208545817</code> or <code>.../#QSP208545817</code>. This page copies the number and opens the official tracking site.</div>
+    </div>
+  </div>
+
+  <script>
+    // ====== CONFIG ======
+    const DEST = 'https://smartship2.tracxlogis.com/tracking';
+
+    // Parse tracking number from URL: supports ?n=..., ?number=..., ?QSP..., and #hash
+    function getTrackingNumber(){
+      const url = new URL(window.location.href);
+      const params = url.searchParams;
+      let t = params.get('n') || params.get('number') || params.get('track') || '';
+      if(!t){
+        // If someone uses ?QSP208545817 (no key), grab first key name or value
+        const raw = url.search.replace(/^\?/,'');
+        if(raw && !raw.includes('=')) t = decodeURIComponent(raw);
+      }
+      if(!t && url.hash){
+        t = decodeURIComponent(url.hash.replace(/^#/,'').trim());
+      }
+      return (t || '').trim();
+    }
+
+    const statusEl = document.getElementById('status');
+    const numberEl = document.getElementById('number');
+    const copyBtn = document.getElementById('copyBtn');
+    const openBtn = document.getElementById('openBtn');
+
+    let tracking = getTrackingNumber();
+    function setStatus(msg, cls){
+      statusEl.textContent = msg;
+      statusEl.className = 'hint ' + (cls||'');
+    }
+
+    async function copyToClipboard(text){
+      try{
+        await navigator.clipboard.writeText(text);
+        setStatus('Tracking number copied to clipboard ✅', 'ok');
+      }catch(err){
+        setStatus('Could not auto-copy (browser blocked). Please copy manually.', 'warn');
+        // Fallback: select the text so user can copy
+        const r = document.createRange();
+        r.selectNode(numberEl); const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      }
+    }
+
+    function openDest(){
+      window.open(DEST, '_blank', 'noopener');
+    }
+
+    function render(){
+      if(tracking){
+        numberEl.textContent = tracking;
+        copyToClipboard(tracking);
+        setStatus('Ready. Click “Open Tracking Page”, then paste the number if the site doesn’t auto-detect.', '');
+      }else{
+        numberEl.textContent = '(no tracking number found)';
+        setStatus('Add ?n=YOURNUMBER or #YOURNUMBER to the URL, then reload.', 'warn');
+      }
+    }
+
+    copyBtn.addEventListener('click', ()=>{
+      if(tracking) copyToClipboard(tracking);
+    });
+    openBtn.addEventListener('click', openDest);
+
+    render();
+  </script>
+</body>
+</html>
