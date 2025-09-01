@@ -5,22 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Smart Tracking Link</title>
   <style>
-    :root{--bg:#0b1220;--card:#111a2c;--text:#e7eefc;--muted:#9db0d0;--accent:#4ea4ff;--ok:#34d399;--warn:#f59e0b}
+    :root{--bg:#0b1220;--card:#111a2c;--text:#e7eefc;--muted:#9db0d0;--accent:#4ea4ff;--ok:#34d399;--warn:#f59e0b;--bad:#ef4444}
     html,body{height:100%}
     body{margin:0;background:linear-gradient(160deg,var(--bg),#0a1020 60%);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,'Helvetica Neue',Noto Sans,'Apple Color Emoji','Segoe UI Emoji'}
     .wrap{min-height:100%;display:grid;place-items:center;padding:24px}
-    .card{width:min(680px,92vw);background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:22px 22px 18px}
+    .card{width:min(860px,92vw);background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:22px 22px 18px}
     h1{font-size:1.25rem;margin:0 0 12px;letter-spacing:.3px}
+    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
+    @media (max-width:860px){.grid{grid-template-columns:1fr}}
     .num{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#0a1324;border:1px dashed rgba(255,255,255,.18);border-radius:12px;padding:12px 14px;word-break:break-all}
     .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
     button{appearance:none;border:0;border-radius:12px;padding:11px 14px;background:#1a2744;color:var(--text);cursor:pointer}
     button:hover{background:#1e2d52}
     .primary{background:var(--accent);color:#00122a;font-weight:600}
     .primary:hover{filter:brightness(1.05)}
+    .danger{background:var(--bad)}
+    input[type="text"]{width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#0a1324;color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    label{font-size:.9rem;color:var(--muted)}
     .hint{color:var(--muted);font-size:.9rem;margin-top:10px}
     .ok{color:var(--ok)}
     .warn{color:var(--warn)}
     .hidden{display:none}
+    .qrbox{display:grid;place-items:center;background:#0a1324;border-radius:14px;border:1px dashed rgba(255,255,255,.18);padding:16px;min-height:220px}
+    .linkpreview{margin-top:8px;word-break:break-all}
+    .linkpreview code{background:#0a1324;padding:6px 8px;border-radius:10px}
   </style>
 </head>
 <body>
@@ -28,26 +36,50 @@
     <div class="card">
       <h1>Tracking Link Helper</h1>
       <div id="status" class="hint">Reading tracking number from URL…</div>
-      <div id="number" class="num" aria-live="polite">(no number yet)</div>
-      <div class="row">
-        <button id="copyBtn" title="Copy number to clipboard">Copy Number</button>
-        <button id="openBtn" class="primary" title="Open Tracxlogis tracking page">Open Tracking Page</button>
+
+      <div class="grid">
+        <section>
+          <label for="tInput">Tracking number</label>
+          <input id="tInput" type="text" placeholder="e.g. QSP208545817" />
+          <div id="number" class="num" aria-live="polite" style="margin-top:10px">(no number yet)</div>
+          <div class="row">
+            <button id="copyNum">Copy Number</button>
+            <button id="openBtn" class="primary">Open Tracking Page</button>
+            <button id="countBtn">Auto-open in 3s</button>
+            <button id="clearBtn" class="danger">Clear</button>
+          </div>
+          <div class="hint linkpreview">Share link: <code id="shareLink">(add a number)</code></div>
+          <div class="row" style="margin-top:10px">
+            <button id="copyLink">Copy Share Link</button>
+          </div>
+        </section>
+
+        <section>
+          <div class="qrbox" id="qr"></div>
+          <div class="row" style="margin-top:10px">
+            <button id="makeQR" class="primary">Generate QR</button>
+            <button id="dlQR">Download QR PNG</button>
+          </div>
+          <div class="hint">Handy for labels. Buyers scan and land on this page which copies the number and opens the official site.</div>
+        </section>
       </div>
-      <div class="hint">How to use: send a link like <code>https://YOURUSERNAME.github.io/tracking-links/?n=QSP208545817</code> or <code>.../#QSP208545817</code>. This page copies the number and opens the official tracking site.</div>
+
+      <div class="hint" style="margin-top:14px">Use links like <code>?n=QSP208545817</code> or <code>#QSP208545817</code>. This page copies the number and can auto-open the Tracxlogis page.</div>
     </div>
   </div>
 
+  <!-- tiny QR library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script>
     // ====== CONFIG ======
     const DEST = 'https://smartship2.tracxlogis.com/tracking';
 
-    // Parse tracking number from URL: supports ?n=..., ?number=..., ?QSP..., and #hash
-    function getTrackingNumber(){
+    // Parse tracking number from URL: supports ?n=..., ?number=..., ?track=..., bare ?VALUE, and #hash
+    function getTrackingNumberFromUrl(){
       const url = new URL(window.location.href);
       const params = url.searchParams;
       let t = params.get('n') || params.get('number') || params.get('track') || '';
       if(!t){
-        // If someone uses ?QSP208545817 (no key), grab first key name or value
         const raw = url.search.replace(/^\?/,'');
         if(raw && !raw.includes('=')) t = decodeURIComponent(raw);
       }
@@ -57,50 +89,96 @@
       return (t || '').trim();
     }
 
+    // Elements
     const statusEl = document.getElementById('status');
     const numberEl = document.getElementById('number');
-    const copyBtn = document.getElementById('copyBtn');
-    const openBtn = document.getElementById('openBtn');
+    const inputEl  = document.getElementById('tInput');
+    const openBtn  = document.getElementById('openBtn');
+    const copyNum  = document.getElementById('copyNum');
+    const copyLink = document.getElementById('copyLink');
+    const countBtn = document.getElementById('countBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const shareLinkEl = document.getElementById('shareLink');
+    const qrBox = document.getElementById('qr');
+    const dlQR = document.getElementById('dlQR');
+    const makeQR = document.getElementById('makeQR');
 
-    let tracking = getTrackingNumber();
+    let tracking = getTrackingNumberFromUrl();
+    let timer = null;
+    let qrcode = null;
+
     function setStatus(msg, cls){
-      statusEl.textContent = msg;
-      statusEl.className = 'hint ' + (cls||'');
+      statusEl.textContent = msg; statusEl.className = 'hint ' + (cls||'');
     }
 
-    async function copyToClipboard(text){
-      try{
-        await navigator.clipboard.writeText(text);
-        setStatus('Tracking number copied to clipboard ✅', 'ok');
-      }catch(err){
-        setStatus('Could not auto-copy (browser blocked). Please copy manually.', 'warn');
-        // Fallback: select the text so user can copy
-        const r = document.createRange();
-        r.selectNode(numberEl); const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    function buildShareLink(num){
+      const base = location.origin + location.pathname; // keep this page
+      const url = `${base}?n=${encodeURIComponent(num)}`;
+      return url;
+    }
+
+    function updateUI(){
+      const t = (inputEl.value || '').trim();
+      numberEl.textContent = t ? t : '(no number yet)';
+      shareLinkEl.textContent = t ? buildShareLink(t) : '(add a number)';
+    }
+
+    async function copy(text){
+      try { await navigator.clipboard.writeText(text); setStatus('Copied to clipboard ✅','ok'); }
+      catch { setStatus('Clipboard blocked. Text selected—press Ctrl/Cmd+C.','warn');
+        const r = document.createRange(); r.selectNode(numberEl);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
       }
     }
 
-    function openDest(){
-      window.open(DEST, '_blank', 'noopener');
+    function openDest(){ window.open(DEST, '_blank', 'noopener'); }
+
+    function startCountdown(seconds=3){
+      if(!inputEl.value.trim()) return setStatus('Enter a tracking number first.', 'warn');
+      clearInterval(timer); let s = seconds; countBtn.disabled = true;
+      setStatus(`Auto-opening in ${s}s…`, '');
+      timer = setInterval(()=>{ s--; setStatus(`Auto-opening in ${s}s…`, ''); if(s<=0){ clearInterval(timer); countBtn.disabled=false; openDest(); } }, 1000);
     }
 
-    function render(){
-      if(tracking){
-        numberEl.textContent = tracking;
-        copyToClipboard(tracking);
-        setStatus('Ready. Click “Open Tracking Page”, then paste the number if the site doesn’t auto-detect.', '');
-      }else{
-        numberEl.textContent = '(no tracking number found)';
-        setStatus('Add ?n=YOURNUMBER or #YOURNUMBER to the URL, then reload.', 'warn');
-      }
+    function ensureQR(){
+      if(qrcode){ qrBox.innerHTML=''; qrcode.clear(); qrcode = null; }
+      qrcode = new QRCode(qrBox, { text: shareLinkEl.textContent, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
     }
 
-    copyBtn.addEventListener('click', ()=>{
-      if(tracking) copyToClipboard(tracking);
-    });
+    function downloadQR(){
+      const img = qrBox.querySelector('img');
+      const canvas = qrBox.querySelector('canvas');
+      let dataURL;
+      if(canvas){ dataURL = canvas.toDataURL('image/png'); }
+      else if(img){ dataURL = img.src; }
+      else { setStatus('Generate the QR first.', 'warn'); return; }
+      const a = document.createElement('a');
+      a.href = dataURL; a.download = `track-${(inputEl.value||'link')}.png`; a.click();
+    }
+
+    // Wire up events
+    inputEl.addEventListener('input', updateUI);
     openBtn.addEventListener('click', openDest);
+    copyNum.addEventListener('click', ()=>{ const t=inputEl.value.trim(); if(t) copy(t); });
+    copyLink.addEventListener('click', ()=>{ const t=inputEl.value.trim(); if(t) copy(buildShareLink(t)); });
+    countBtn.addEventListener('click', ()=> startCountdown(3));
+    clearBtn.addEventListener('click', ()=>{ inputEl.value=''; updateUI(); setStatus('Cleared.',''); qrBox.innerHTML=''; });
+    makeQR.addEventListener('click', ()=>{ if(!inputEl.value.trim()) return setStatus('Enter a number first.', 'warn'); ensureQR(); setStatus('QR generated.','ok'); });
+    dlQR.addEventListener('click', downloadQR);
 
-    render();
+    // Initial load from URL
+    if(tracking){
+      inputEl.value = tracking;
+      numberEl.textContent = tracking;
+      setStatus('Number found in URL. Auto-copying…', '');
+      copy(tracking);
+      updateUI();
+      // Auto open after 3s (buyers don’t have to click twice)
+      startCountdown(3);
+    } else {
+      updateUI();
+      setStatus('Add ?n=YOURNUMBER or #YOURNUMBER to the URL, or type it above.', 'warn');
+    }
   </script>
 </body>
 </html>
